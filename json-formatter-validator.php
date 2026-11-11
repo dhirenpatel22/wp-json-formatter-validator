@@ -2,7 +2,7 @@
 /**
  * Plugin Name: JSON Formatter & Validator
  * Description: A tool for formatting, validating, and manipulating JSON data.
- * Version: 1.8
+ * Version: 1.9
  * Author: Dhiren Patel
  * Author URI: https://www.dhirenpatel.me/
  * License: GPL-2.0+
@@ -17,8 +17,8 @@ function json_tool_shortcode() {
     // Enqueue assets only when shortcode is rendered
     // js-yaml is self-hosted (4.1.0, MIT); the XML and CSV converters are built in.
     wp_enqueue_script( 'js-yaml', plugins_url( '/js/vendor/js-yaml.min.js', __FILE__ ), array(), '4.1.0', true );
-    wp_enqueue_script( 'json-tool-script', plugins_url( '/js/json-tool.js', __FILE__ ), array( 'js-yaml' ), '1.8', true );
-    wp_enqueue_style( 'json-tool-style', plugins_url( '/css/json-tool.css', __FILE__ ), array(), '1.8' );
+    wp_enqueue_script( 'json-tool-script', plugins_url( '/js/json-tool.js', __FILE__ ), array( 'js-yaml' ), '1.9', true );
+    wp_enqueue_style( 'json-tool-style', plugins_url( '/css/json-tool.css', __FILE__ ), array(), '1.9' );
     ob_start();
     ?>
     <div id="json-tool">
