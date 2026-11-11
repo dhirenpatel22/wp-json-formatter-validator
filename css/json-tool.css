@@ -98,7 +98,8 @@
     transition: background-color 0.3s ease;
 }
 
-.button-column button:hover, #fetch-btn:hover {
+/* Scoped to #json-tool so theme button colours can't leave navy text on the navy hover. */
+#json-tool .button-column button:hover, #json-tool #fetch-btn:hover {
     background-color: #0d1267;
 	border: none;
 	color: white;
