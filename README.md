@@ -8,12 +8,13 @@ It runs the [JSON formatter and validator on dhirenpatel.me](https://www.dhirenp
 
 - Load JSON by pasting it, choosing a `.json` file or fetching it from a URL.
 - Format (2-space indent), validate or minify it. Pasted input is validated and formatted as you type.
+- Integers too large for a JavaScript number (above 9007199254740991) keep every digit in every output.
 - Quotes unquoted keys (`{a: 1}` becomes `{"a": 1}`) when that turns invalid input into valid JSON.
 - Convert to XML, CSV or YAML.
 - Copy the output or download it as a file.
 - Messages go to a `role="status"` region, so screen readers announce them.
 
-URL fetching happens in the browser, so it works only for URLs that allow cross-origin requests (CORS).
+URL fetching happens in the browser, so it works only for full `https://` URLs that allow cross-origin requests (CORS).
 
 ## Install
 

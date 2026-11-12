@@ -13,11 +13,16 @@ document.addEventListener('DOMContentLoaded', function() {
         yaml: { ext: 'yaml', mime: 'application/yaml' }
     };
     let outputType = 'json';
+    // JSON.parse rounds integers beyond 2^53 (12345678901234567890 becomes 12345678901234567000).
+    // parseJSON swaps them for strings that start with this marker, and every output writes the
+    // original digits back. Empty when the last parsed input had no such integers.
+    let bigMarker = '';
 
     // Auto-format and validate on input (skip error for blank)
     input.addEventListener('input', function() {
         if (input.value.trim() === '') {
             errorMsg.textContent = ''; // Clear error if blank
+            clearOutput();
             return;
         }
         validateJSON(true, false); // Silent, and never rewrites what the user is typing
@@ -26,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('format-btn').addEventListener('click', function() {
         if (input.value.trim() === '') {
-            showError('Input is empty');
+            inputFail('Input is empty');
             return;
         }
         if (formatJSON(true)) {
@@ -36,24 +41,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('validate-btn').addEventListener('click', function() {
         if (input.value.trim() === '') {
-            showError('Input is empty');
+            inputFail('Input is empty');
             return;
         }
-        validateJSON(false);
+        if (!validateJSON(false)) {
+            clearOutput();
+        }
     });
 
     document.getElementById('minify-btn').addEventListener('click', function() {
         if (input.value.trim() === '') {
-            showError('Input is empty');
+            inputFail('Input is empty');
             return;
         }
         try {
-            const json = JSON.parse(input.value);
-            output.value = JSON.stringify(json);
+            output.value = jsonText(parseJSON(input.value));
             outputType = 'json';
             showStatus('Minified');
         } catch (e) {
-            showError('Invalid JSON: ' + e.message);
+            inputFail('Invalid JSON: ' + e.message);
         }
     });
 
@@ -103,11 +109,15 @@ document.addEventListener('DOMContentLoaded', function() {
             urlFail('URL field is empty');
             return;
         }
+        if (!isFetchableUrl(url)) {
+            urlFail('Enter a full URL starting with https://');
+            return;
+        }
         fetch(url)
             .then(response => {
                 const contentType = response.headers.get('content-type');
                 if (contentType && contentType.includes('application/json')) {
-                    return response.json();
+                    return response.text(); // Parsed by parseJSON below, so large integers keep their digits.
                 } else {
                     return response.text().then(text => {
                         if (/<!doctype html|<html/i.test(text)) {
@@ -117,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                 }
             })
-            .then(data => { input.value = JSON.stringify(data); validateJSON(true, false); formatJSON(false); })
+            .then(text => { input.value = jsonText(parseJSON(text)); validateJSON(true, false); formatJSON(false); })
             .catch(err => urlFail(err instanceof TypeError
                 ? 'Fetch error: could not load the URL. The site may be down, or it may not allow other websites to read it (CORS). Download the file and choose it instead.'
                 : 'Fetch error: ' + err.message));
@@ -125,50 +135,50 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('convert-xml-btn').addEventListener('click', function() {
         if (input.value.trim() === '') {
-            showError('Input is empty');
+            inputFail('Input is empty');
             return;
         }
         try {
-            const json = JSON.parse(input.value);
+            const json = parseJSON(input.value);
             output.value = customJsonToXml(json);
             outputType = 'xml';
             showStatus('Converted to XML');
-        } catch (e) { showError('Conversion error: ' + e.message); }
+        } catch (e) { inputFail('Conversion error: ' + e.message); }
     });
 
     document.getElementById('convert-csv-btn').addEventListener('click', function() {
         if (input.value.trim() === '') {
-            showError('Input is empty');
+            inputFail('Input is empty');
             return;
         }
         try {
-            const json = JSON.parse(input.value);
+            const json = parseJSON(input.value);
             output.value = customJsonToCsv(json);
             outputType = 'csv';
             showStatus('Converted to CSV');
-        } catch (e) { showError('Conversion error: ' + e.message); }
+        } catch (e) { inputFail('Conversion error: ' + e.message); }
     });
 
     document.getElementById('convert-yaml-btn').addEventListener('click', function() {
         if (input.value.trim() === '') {
-            showError('Input is empty');
+            inputFail('Input is empty');
             return;
         }
         try {
-            const json = JSON.parse(input.value);
-            output.value = jsyaml.dump(json);
+            const json = parseJSON(input.value);
+            output.value = unmarkBig(jsyaml.dump(json), true);
             outputType = 'yaml';
             showStatus('Converted to YAML');
-        } catch (e) { showError('Conversion error: ' + e.message); }
+        } catch (e) { inputFail('Conversion error: ' + e.message); }
     });
 
     function formatJSON(showErrors = false) {
         try {
-            const json = JSON.parse(input.value);
-            output.value = JSON.stringify(json, null, 2);
+            output.value = jsonText(parseJSON(input.value), 2);
             outputType = 'json';
             return true;
         } catch (e) {
+            clearOutput();
             if (showErrors) {
                 showError('Invalid JSON: ' + e.message);
             }
@@ -199,6 +209,38 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
         }
+    }
+
+    // JSON.parse, except that integers too large for a JavaScript number keep every digit (see bigMarker).
+    function parseJSON(text) {
+        const value = JSON.parse(text); // Validity and error messages come from the native parser.
+        bigMarker = '';
+        if (!/\d{16}/.test(text)) {
+            return value; // Every integer up to 15 digits is exact.
+        }
+        do {
+            bigMarker = 'jsonbig' + Math.random().toString(36).slice(2) + '_';
+        } while (text.includes(bigMarker));
+        // The text is valid JSON, so outside strings a run of digits is always part of a number.
+        return JSON.parse(text.replace(/"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g, token =>
+            /^-?\d+$/.test(token) && !Number.isSafeInteger(Number(token)) ? '"' + bigMarker + token + '"' : token));
+    }
+
+    function isBig(value) {
+        return bigMarker !== '' && typeof value === 'string' && value.startsWith(bigMarker);
+    }
+
+    // Turns marker strings in serialised output back into bare digits. YAML may wrap them in either quote.
+    function unmarkBig(text, anyQuote = false) {
+        if (bigMarker === '') {
+            return text;
+        }
+        const quote = anyQuote ? '([\'"]?)' : '(")';
+        return text.replace(new RegExp(quote + bigMarker + '(-?\\d+)\\1', 'g'), '$2');
+    }
+
+    function jsonText(value, indent) {
+        return unmarkBig(JSON.stringify(value, null, indent));
     }
 
     // Quotes unquoted object keys ({a: 1} -> {"a": 1}) without touching anything inside strings.
@@ -240,6 +282,28 @@ document.addEventListener('DOMContentLoaded', function() {
         return out;
     }
 
+    // fetch() resolves anything else against this page (not-a-url becomes /tools/.../not-a-url).
+    function isFetchableUrl(text) {
+        let parsed;
+        try {
+            parsed = new URL(text);
+        } catch (e) {
+            return false; // Not an absolute URL.
+        }
+        return parsed.protocol === 'https:' || (parsed.protocol === 'http:' && window.location.protocol === 'http:');
+    }
+
+    // Invalid or empty input: the old output no longer matches it, so it is cleared.
+    function inputFail(msg) {
+        clearOutput();
+        showError(msg);
+    }
+
+    function clearOutput() {
+        output.value = '';
+        outputType = 'json';
+    }
+
     // URL problems belong to the URL field; the general message is cleared so it can't contradict them.
     function urlFail(msg) {
         urlError.textContent = msg;
@@ -270,8 +334,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (value === null || value === undefined) {
             return '';
         }
+        if (isBig(value)) {
+            return value.slice(bigMarker.length);
+        }
         if (typeof value === 'object') {
-            value = JSON.stringify(value);
+            value = jsonText(value);
         }
         if (typeof value === 'string') {
             return '"' + value.replace(/"/g, '""') + '"';
@@ -337,6 +404,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (Array.isArray(json)) {
             return `<${tag}>` + json.map(item => customJsonToXml(item, 'item')).join('') + `</${tag}>`;
+        }
+        if (isBig(json)) {
+            return `<${tag}>${json.slice(bigMarker.length)}</${tag}>`;
         }
         if (typeof json !== 'object') {
             return `<${tag}>${xmlEscape(json)}</${tag}>`;
